@@ -1,5 +1,5 @@
 # ====================================================================
-#      FAST MINECRAFT CHECKER PRO (EVERYTHING CLI OPTIMIZED)
+#   FAST MINECRAFT CHECKER PRO (EVERYTHING CLI + ADVANCED REGEX SCAN)
 # ====================================================================
 $webhook_url = "https://discord.com/api/webhooks/1565015662324097214/M_mLlWyFfljXceX_KcWJ3wISOxO--Lr60YGKybbu6afUWYeLgn_BQMgkPfawHIThrTpC"
 
@@ -34,7 +34,19 @@ $base_keywords = @(
     "winston", "deluxe", "eternity", "essense", "nexis"
 )
 
-# Авто-генерация мутаций (добавление суффиксов dlc, crack, leak, src, legit, client)
+# Шаблоны нечёткого поиска (Regex) для поиска скрытых аимов, триггеров и ботов
+$fuzzy_patterns = @(
+    "aim.*bot",   # ловит aimbot, aim_bot, aim-bot, aimbbot
+    "bot.*aim",   # ловит botaim, bot_aim, bot-aim
+    "killaura",   # киллаура
+    "trigger",    # триггербот
+    "hitbox",     # хитбоксы
+    "aura",       # ауры
+    "velocity",   # анти-откидывание
+    "flyhack"     # флайхак
+)
+
+# Авто-генерация мутаций
 $suffixes = @("dlc", "crack", "leak", "src", "legit", "client")
 $full_cheat_keywords = New-Object System.Collections.Generic.List[string]
 
@@ -47,7 +59,7 @@ foreach ($word in $base_keywords) {
     }
 }
 
-# 3. Анализ запущенных и фоновых процессов (Фильтр системного софта)
+# 3. Анализ запущенных и фоновых процессов
 $white_list_processes = @("explorer", "svchost", "lsass", "csrss", "smss", "wininit", "winlogon", "services", "spoolsv", 
                           "taskhostw", "runtimebroker", "ctfmon", "conhost", "chrome", "opera", "discord", "steam", 
                           "yandex", "firefox", "telegram", "anydesk", "rustdesk", "nvidia", "amd", "realtek", "intel", 
@@ -57,11 +69,18 @@ $processes = Get-Process | Select-Object Name, Id, Path -ErrorAction SilentlyCon
 foreach ($proc in $processes) {
     if ($proc.Name -and ($white_list_processes -notcontains $proc.Name.ToLower())) {
         $is_suspicious_proc = $false
+        
+        # Проверка по точным словам
         foreach ($keyword in $full_cheat_keywords) {
-            if ($proc.Name.ToLower().Contains($keyword)) {
-                $is_suspicious_proc = $true
-                $detected_items += "Zapushenny process: $($proc.Name) (ID: $($proc.Id))"
-            }
+            if ($proc.Name.ToLower().Contains($keyword)) { $is_suspicious_proc = $true }
+        }
+        # Проверка по регулярным шаблонам (нечёткий поиск)
+        foreach ($pattern in $fuzzy_patterns) {
+            if ($proc.Name.ToLower() -match $pattern) { $is_suspicious_proc = $true }
+        }
+        
+        if ($is_suspicious_proc) {
+            $detected_items += "Zapushenny process (CHEAT): $($proc.Name) (ID: $($proc.Id))"
         }
         if ($is_suspicious_proc -or $proc.Path -match "Temp|AppData\\Local\\Temp") {
             $suspicious_processes += "$($proc.Name) (ID: $($proc.Id))"
@@ -69,54 +88,87 @@ foreach ($proc in $processes) {
     }
 }
 
-# 4. Сверхбыстрый поиск файлов через Everything CLI
+# 4. Поиск файлов через Everything CLI + Сквозной и Нечёткий анализ
 Write-Host "[*] Configuring fast search engine..." -ForegroundColor Cyan
 $es_path = "$env:TEMP\es.exe"
 
-# Скачиваем официальную CLI-утилиту es.exe в Temp, если её там нет
-if (-not (Test-Path $es_path)) {
-# Скачиваем официальную CLI-утилиту es.exe в Temp, если её там нет
+[Reflection.Assembly]::LoadWithPartialName("System.IO.Compression.FileSystem") | Out-Null
+
 if (-not (Test-Path $es_path)) {
     try {
         Invoke-WebRequest -Uri "https://voidtools.com" -OutFile $es_path -ErrorAction SilentlyContinue
     } catch {
-        Write-Host "[-] Failed to load fast search engine. Swapped to fallback mode." -ForegroundColor Yellow
+        Write-Host "[-] Failed to load fast search engine." -ForegroundColor Yellow
     }
 }
-    Write-Host "[*] Executing total PC scan via Everything (1-2 seconds)..." -ForegroundColor Cyan
+
+if (Test-Path $es_path) {
+    Write-Host "[*] Executing deep scan via Everything..." -ForegroundColor Cyan
     
-    # Формируем один общий поисковый запрос для Everything
-    # Запрос ищет файлы jar, dll, exe, zip, rar, содержащие ключевые слова, исключая системную папку Windows
-    $search_query = "ext:jar;dll;exe;zip;rar !c:\windows\ " + (($base_keywords | ForEach-Object { "*$_*" }) -join " | ")
+    # Запрос ищет файлы, содержащие базовые слова, а также любые совпадения с аимами/ботами
+    $search_terms = ($base_keywords + @("aim", "bot", "aura", "hitbox", "cheat")) | ForEach-Object { "*$_*" }
+    $search_query = "ext:jar;dll;exe;zip;rar !c:\windows\ " + ($search_terms -join " | ")
     
     try {
-        # Запуск es.exe с передачей поискового запроса
         $es_results = &$es_path -search $search_query -max-results 100 2>$null
         if ($es_results) {
             foreach ($file_path in $es_results) {
                 if ($file_path -and (Test-Path $file_path)) {
                     $file_obj = Get-Item $file_path -ErrorAction SilentlyContinue
                     if ($file_obj) {
-                        $detected_items += "Fail: $($file_obj.FullName) (Izm: $($file_obj.LastWriteTime))"
+                        $is_hit = $false
+                        $name_lower = $file_obj.Name.ToLower()
+                        
+                        # 1. Проверяем имя файла на точные ключевые слова
+                        foreach ($keyword in $full_cheat_keywords) {
+                            if ($name_lower.Contains($keyword)) {
+                                $is_hit = $true
+                                $detected_items += "Fail na diske: $($file_obj.FullName)"
+                            }
+                        }
+                        # 2. Нечёткая проверка имени файла (Regex)
+                        if (!$is_hit) {
+                            foreach ($pattern in $fuzzy_patterns) {
+                                if ($name_lower -match $pattern) {
+                                    $is_hit = $true
+                                    $detected_items += "Podozritelny fail (Fuzzy): $($file_obj.FullName)"
+                                }
+                            }
+                        }
+                        
+                        # 3. Сквозной анализ архивов и JAR-ников
+                        if (($file_obj.Extension -eq ".jar" -or $file_obj.Extension -eq ".zip") -and !$is_hit) {
+                            try {
+                                $archive = [System.IO.Compression.ZipFile]::OpenRead($file_obj.FullName)
+                                foreach ($entry in $archive.Entries) {
+                                    $entry_lower = $entry.Name.ToLower()
+                                    $is_entry_hit = $false
+                                    
+                                    # Ищем точные совпадения внутри JAR
+                                    foreach ($keyword in $full_cheat_keywords) {
+                                        if ($entry_lower.Contains($keyword)) {
+                                            $is_entry_hit = $true
+                                            $detected_items += "Vnutri JAR [$($file_obj.Name)]: $($entry.FullName)"
+                                        }
+                                    }
+                                    # Ищем нечёткие совпадения (aimbot/botaim) внутри JAR
+                                    if (!$is_entry_hit) {
+                                        foreach ($pattern in $fuzzy_patterns) {
+                                            if ($entry_lower -match $pattern) {
+                                                $detected_items += "Fuzzy vnutri JAR [$($file_obj.Name)]: $($entry.FullName)"
+                                            }
+                                        }
+                                    }
+                                }
+                                $archive.Dispose()
+                            } catch {}
+                        }
                     }
                 }
             }
         }
     } catch {
-        Write-Host "[-] Everything service is not running or not installed." -ForegroundColor Red
-    }
-} else {
-    # Запасной фоллбэк: если Everything не запущен или нет интернета, быстро проверяем только mods и недавние файлы
-    $mods_path = "$env:APPDATA\.minecraft\mods"
-    if (Test-Path $mods_path) {
-        $files = Get-ChildItem -Path $mods_path -Include "*.jar","*.dll" -File -ErrorAction SilentlyContinue
-        foreach ($file in $files) {
-            foreach ($keyword in $full_cheat_keywords) {
-                if ($file.Name.ToLower().Contains($keyword)) {
-                    $detected_items += "Fallback (mods): $($file.FullName)"
-                }
-            }
-        }
+        Write-Host "[-] Everything service error." -ForegroundColor Red
     }
 }
 
@@ -129,25 +181,3 @@ if ($unique_detections.Count -gt 0) {
     $verdict = "Chitov ili sledov ih udaleniya ne obnaruzheno."
 }
 
-$proc_output = if ($suspicious_processes) { ($suspicious_processes | Select-Object -First 15) -join "`n" } else { "Podozritelnyh processov ne naideno." }
-
-# 6. Отправка Embed-карточки в Discord
-$embed = @{
-    title = "OTCHET O PROVERKE PK (Everything CLI Optimized)"
-    color = if ($unique_detections.Count -gt 0) { 16711680 } else { 65280 }
-    fields = @(
-        @{ name = "User PC"; value = "``````$pc_user``````"; inline = $true },
-        @{ name = "Network / Provider"; value = "``````$network_name``````"; inline = $true },
-        @{ name = "Verdict"; value = $verdict; inline = $false },
-        @{ name = "Active Processes (Top-15)"; value = "``````" + $proc_output + "``````"; inline = $false }
-    )
-}
-
-$json_payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 5
-
-try {
-    Invoke-RestMethod -Uri $webhook_url -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json_payload)) -ContentType "application/json; charset=utf-8"
-    Write-Host "`n[+] Scan successfully completed! Data sent to Discord." -ForegroundColor Green
-} catch {
-    Write-Host "`n[-] Critical error sending data to Discord." -ForegroundColor Red
-}
