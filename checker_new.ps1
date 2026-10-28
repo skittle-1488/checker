@@ -1,5 +1,5 @@
 # ====================================================================
-#          ULTRA MINECRAFT CHECKER PRO (JAR, EXE, ARCHIVES & DLL)
+#      FAST MINECRAFT CHECKER PRO (EVERYTHING CLI OPTIMIZED)
 # ====================================================================
 $webhook_url = "https://discord.com/api/webhooks/1565015662324097214/M_mLlWyFfljXceX_KcWJ3wISOxO--Lr60YGKybbu6afUWYeLgn_BQMgkPfawHIThrTpC"
 
@@ -69,39 +69,53 @@ foreach ($proc in $processes) {
     }
 }
 
-# 4. Тотальный поиск по ВСЕМ дискам ПК
-$disks = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-$target_extensions = @("*.jar", "*.exe", "*.zip", "*.rar", "*.dll")
+# 4. Сверхбыстрый поиск файлов через Everything CLI
+Write-Host "[*] Configuring fast search engine..." -ForegroundColor Cyan
+$es_path = "$env:TEMP\es.exe"
 
-[Reflection.Assembly]::LoadWithPartialName("System.IO.Compression.FileSystem") | Out-Null
+# Скачиваем официальную CLI-утилиту es.exe в Temp, если её там нет
+if (-not (Test-Path $es_path)) {
+    try {
+        Invoke-WebRequest -Uri "https://voidtools.com" -OutFile $es_path -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "[-] Failed to load fast search engine. Swapped to fallback mode." -ForegroundColor Yellow
+    }
+}
 
-foreach ($disk in $disks) {
-    $files = Get-ChildItem -Path $disk -Include $target_extensions -Recurse -File -ErrorAction SilentlyContinue | 
-             Where-Object { $_.FullName -notmatch "C:\\Windows" -and $_.FullName -notmatch "Program Files" }
-
-    foreach ($file in $files) {
-        $file_name_lower = $file.Name.ToLower()
-        $is_hit = $false
-        
-        foreach ($keyword in $full_cheat_keywords) {
-            if ($file_name_lower.Contains($keyword)) {
-                $is_hit = $true
-                $detected_items += "Fail na diske ($($file.Extension)): $($file.FullName) (Izm: $($file.LastWriteTime))"
-            }
-        }
-        
-        if ($file.Extension -eq ".zip" -and !$is_hit) {
-            try {
-                $zip = [System.IO.Compression.ZipFile]::OpenRead($file.FullName)
-                foreach ($entry in $zip.Entries) {
-                    foreach ($keyword in $full_cheat_keywords) {
-                        if ($entry.Name.ToLower().Contains($keyword)) {
-                            $detected_items += "Vnutri arhiva [$($file.Name)]: $($entry.FullName)"
-                        }
+if (Test-Path $es_path) {
+    Write-Host "[*] Executing total PC scan via Everything (1-2 seconds)..." -ForegroundColor Cyan
+    
+    # Формируем один общий поисковый запрос для Everything
+    # Запрос ищет файлы jar, dll, exe, zip, rar, содержащие ключевые слова, исключая системную папку Windows
+    $search_query = "ext:jar;dll;exe;zip;rar !c:\windows\ " + (($base_keywords | ForEach-Object { "*$_*" }) -join " | ")
+    
+    try {
+        # Запуск es.exe с передачей поискового запроса
+        $es_results = &$es_path -search $search_query -max-results 100 2>$null
+        if ($es_results) {
+            foreach ($file_path in $es_results) {
+                if ($file_path -and (Test-Path $file_path)) {
+                    $file_obj = Get-Item $file_path -ErrorAction SilentlyContinue
+                    if ($file_obj) {
+                        $detected_items += "Fail: $($file_obj.FullName) (Izm: $($file_obj.LastWriteTime))"
                     }
                 }
-                $zip.Dispose()
-            } catch {}
+            }
+        }
+    } catch {
+        Write-Host "[-] Everything service is not running or not installed." -ForegroundColor Red
+    }
+} else {
+    # Запасной фоллбэк: если Everything не запущен или нет интернета, быстро проверяем только mods и недавние файлы
+    $mods_path = "$env:APPDATA\.minecraft\mods"
+    if (Test-Path $mods_path) {
+        $files = Get-ChildItem -Path $mods_path -Include "*.jar","*.dll" -File -ErrorAction SilentlyContinue
+        foreach ($file in $files) {
+            foreach ($keyword in $full_cheat_keywords) {
+                if ($file.Name.ToLower().Contains($keyword)) {
+                    $detected_items += "Fallback (mods): $($file.FullName)"
+                }
+            }
         }
     }
 }
@@ -117,9 +131,9 @@ if ($unique_detections.Count -gt 0) {
 
 $proc_output = if ($suspicious_processes) { ($suspicious_processes | Select-Object -First 15) -join "`n" } else { "Podozritelnyh processov ne naideno." }
 
-# 6. Отправка Embed-карточки в твой Discord
+# 6. Отправка Embed-карточки в Discord
 $embed = @{
-    title = "OTCHET O PROVERKE PK (Error Checker PRO)"
+    title = "OTCHET O PROVERKE PK (Everything CLI Optimized)"
     color = if ($unique_detections.Count -gt 0) { 16711680 } else { 65280 }
     fields = @(
         @{ name = "User PC"; value = "``````$pc_user``````"; inline = $true },
