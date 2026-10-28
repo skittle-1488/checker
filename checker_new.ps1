@@ -1,7 +1,7 @@
 # ====================================================================
-#   FAST MINECRAFT CHECKER PRO (EVERYTHING CLI + ADVANCED REGEX SCAN)
+#   MINECRAFT CHECKER PRO (AUTONOMOUS SMART DIRECTORY SEARCH)
 # ====================================================================
-$webhook_url = "https://discord.com"
+$webhook_url = "https://discord.com/api/webhooks/1565015662324097214/M_mLlWyFfljXceX_KcWJ3wISOxO--Lr60YGKybbu6afUWYeLgn_BQMgkPfawHIThrTpC"
 
 # 1. Инициализация и сбор базовых данных
 $pc_user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -34,12 +34,9 @@ $base_keywords = @(
     "winston", "deluxe", "eternity", "essense", "nexis"
 )
 
-# Шаблоны глубокого нечёткого поиска (Regex) — поймают хаотичный набор букв, если внутри есть aim или bot
+# Шаблоны нечёткого поиска (Regex)
 $fuzzy_patterns = @(
-    "aim.*bot",      # ловит aimbot, aim_bot, aim-bot
-    "bot.*aim",      # ловит botaim, bot_aim
-    ".*aim.*",        # ТОТАЛЬНЫЙ поиск: поймает aiaiaiiaimmdddaw, так как внутри есть слово aim
-    ".*bot.*",        # ТОТАЛЬНЫЙ поиск: поймает любой скрытый скрытый суффикс с bot
+    "aim.*bot", "bot.*aim", ".*aim.*", ".*bot.*",
     "killaura", "trigger", "hitbox", "aura", "velocity", "flyhack"
 )
 
@@ -75,7 +72,7 @@ foreach ($proc in $processes) {
         }
         
         if ($is_suspicious_proc) {
-            $detected_items += "Zapushenny process (CHEAT): $($proc.Name) (ID: $($proc.Id))"
+            $detected_items += "Zapushenny process: $($proc.Name) (ID: $($proc.Id))"
         }
         if ($is_suspicious_proc -or $proc.Path -match "Temp|AppData\\Local\\Temp") {
             $suspicious_processes += "$($proc.Name) (ID: $($proc.Id))"
@@ -83,88 +80,76 @@ foreach ($proc in $processes) {
     }
 }
 
-# 4. Поиск файлов через Everything CLI + Сквозной и Нечёткий анализ
-Write-Host "[*] Configuring fast search engine..." -ForegroundColor Cyan
-$es_path = "$env:TEMP\es.exe"
+# 4. Оптимизированное сканирование критических целевых папок (Вместо всего диска)
+Write-Host "[*] Executing smart directory scan..." -ForegroundColor Cyan
+$target_extensions = @("*.jar", "*.exe", "*.zip", "*.rar", "*.dll")
+
+# Список путей, где Майнкрафт и читы чаще всего находятся
+$paths_to_scan = @(
+    "$env:APPDATA\.minecraft",
+    "$env:USERPROFILE\Downloads",
+    "$env:USERPROFILE\Desktop",
+    "$env:TEMP",
+    "$env:USERPROFILE\AppData\Local\Temp",
+    "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\Recent"
+)
 
 [Reflection.Assembly]::LoadWithPartialName("System.IO.Compression.FileSystem") | Out-Null
 
-# ИСПРАВЛЕНО: Прямая работающая ссылка на скачивание es.exe
-if (-not (Test-Path $es_path)) {
-    try {
-        Invoke-WebRequest -Uri "https://voidtools.com" -OutFile $es_path -ErrorAction SilentlyContinue
-    } catch {
-        Write-Host "[-] Failed to load fast search engine." -ForegroundColor Yellow
-    }
-}
-
-if (Test-Path $es_path) {
-    Write-Host "[*] Executing deep scan via Everything..." -ForegroundColor Cyan
-    
-    # Запрос ищет файлы, содержащие базовые слова, а также "aim", "bot", "aura"
-    $search_terms = ($base_keywords + @("aim", "bot", "aura", "hitbox", "cheat")) | ForEach-Object { "*$_*" }
-    $search_query = "ext:jar;dll;exe;zip;rar !c:\windows\ " + ($search_terms -join " | ")
-    
-    try {
-        $es_results = &$es_path -search $search_query -max-results 100 2>$null
-        if ($es_results) {
-            foreach ($file_path in $es_results) {
-                if ($file_path -and (Test-Path $file_path)) {
-                    $file_obj = Get-Item $file_path -ErrorAction SilentlyContinue
-                    if ($file_obj) {
-                        $is_hit = $false
-                        $name_lower = $file_obj.Name.ToLower()
-                        
-                        foreach ($keyword in $full_cheat_keywords) {
-                            if ($name_lower.Contains($keyword)) {
-                                $is_hit = $true
-                                $detected_items += "Fail na diske: $($file_obj.FullName)"
-                            }
-                        }
-                        if (!$is_hit) {
-                            foreach ($pattern in $fuzzy_patterns) {
-                                if ($name_lower -match $pattern) {
-                                    $is_hit = $true
-                                    $detected_items += "Podozritelny fail (Fuzzy Match): $($file_obj.FullName)"
-                                }
-                            }
-                        }
-                        
-                        # Сквозной анализ архивов и JAR-ников изнутри
-                        if (($file_obj.Extension -eq ".jar" -or $file_obj.Extension -eq ".zip") -and !$is_hit) {
-                            try {
-                                $archive = [System.IO.Compression.ZipFile]::OpenRead($file_obj.FullName)
-                                foreach ($entry in $archive.Entries) {
-                                    $entry_lower = $entry.Name.ToLower()
-                                    $is_entry_hit = $false
-                                    
-                                    foreach ($keyword in $full_cheat_keywords) {
-                                        if ($entry_lower.Contains($keyword)) {
-                                            $is_entry_hit = $true
-                                            $detected_items += "Vnutri JAR [$($file_obj.Name)]: $($entry.FullName)"
-                                        }
-                                    }
-                                    if (!$is_entry_hit) {
-                                        foreach ($pattern in $fuzzy_patterns) {
-                                            if ($entry_lower -match $pattern) {
-                                                $detected_items += "Fuzzy vnutri JAR [$($file_obj.Name)]: $($entry.FullName)"
-                                            }
-                                        }
-                                    }
-                                }
-                                $archive.Dispose()
-                            } catch {}
-                        }
+foreach ($path in $paths_to_scan) {
+    if (Test-Path $path) {
+        $files = Get-ChildItem -Path $path -Include $target_extensions -Recurse -File -ErrorAction SilentlyContinue
+        
+        foreach ($file in $files) {
+            $name_lower = $file.Name.ToLower()
+            $is_hit = $false
+            
+            # Проверка имени файла
+            foreach ($keyword in $full_cheat_keywords) {
+                if ($name_lower.Contains($keyword)) {
+                    $is_hit = $true
+                    $detected_items += "Naiden fail: $($file.FullName)"
+                }
+            }
+            if (!$is_hit) {
+                foreach ($pattern in $fuzzy_patterns) {
+                    if ($name_lower -match $pattern) {
+                        $is_hit = $true
+                        $detected_items += "Fuzzy match fail: $($file.FullName)"
                     }
                 }
             }
+            
+            # Сквозной анализ Java и ZIP архивов изнутри
+            if (($file.Extension -eq ".jar" -or $file.Extension -eq ".zip") -and !$is_hit) {
+                try {
+                    $archive = [System.IO.Compression.ZipFile]::OpenRead($file.FullName)
+                    foreach ($entry in $archive.Entries) {
+                        $entry_lower = $entry.Name.ToLower()
+                        $is_entry_hit = $false
+                        
+                        foreach ($keyword in $full_cheat_keywords) {
+                            if ($entry_lower.Contains($keyword)) {
+                                $is_entry_hit = $true
+                                $detected_items += "Vnutri JAR/ZIP [$($file.Name)]: $($entry.FullName)"
+                            }
+                        }
+                        if (!$is_entry_hit) {
+                            foreach ($pattern in $fuzzy_patterns) {
+                                if ($entry_lower -match $pattern) {
+                                    $detected_items += "Fuzzy vnutri JAR/ZIP [$($file.Name)]: $($entry.FullName)"
+                                }
+                            }
+                        }
+                    }
+                    $archive.Dispose()
+                } catch {}
+            }
         }
-    } catch {
-        Write-Host "[-] Everything service error." -ForegroundColor Red
     }
 }
 
-# 5. Итоговый вердикт и форматирование списков
+# 5. Вердикт и отправка
 $unique_detections = $detected_items | Select-Object -Unique
 if ($unique_detections.Count -gt 0) {
     $verdict = "[!] VNIMANIE! NAIDENY CHITY ILI SLEDY SVOFTA! [!]`n"
@@ -175,19 +160,22 @@ if ($unique_detections.Count -gt 0) {
 
 $proc_output = if ($suspicious_processes) { ($suspicious_processes | Select-Object -First 15) -join "`n" } else { "Podozritelnyh processov ne naideno." }
 
-# 6. Отправка Embed-карточки в Discord
 $embed = @{
-    title = "OTCHET O GLUBOKOI PROVERKE (Everything + Ultra Fuzzy Scan)"
+    title = "OTCHET O SKVOZNOM SCANIROVANII PK"
     color = if ($unique_detections.Count -gt 0) { 16711680 } else { 65280 }
     fields = @(
-@{ name = "User PC"; value = "$pc_user"; inline = $true },
-@{ name = "Network / Provider"; value = "$network_name"; inline = $true },
-@{ name = "Verdict"; value = $verdict; inline = $false },
-@{ name = "Active Processes (Top-15)"; value = "" + $proc_output + ""; inline = $false }
-)
+        @{ name = "User PC"; value = "``````$pc_user``````"; inline = $true },
+        @{ name = "Network / Provider"; value = "``````$network_name``````"; inline = $true },
+        @{ name = "Verdict"; value = $verdict; inline = $false },
+        @{ name = "Active Processes (Top-15)"; value = "``````" + $proc_output + "``````"; inline = $false }
+    )
 }
+
 $json_payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 5
+
 try {
-Invoke-RestMethod -Uri $webhook_url -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json_payload)) -ContentType "application/json; charset=utf-8"
-Write-Host "n[+] Scan successfully completed! Data sent to Discord." -ForegroundColor Green } catch { Write-Host "n[-] Critical error sending data to Discord." -ForegroundColor Red
+    Invoke-RestMethod -Uri $webhook_url -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json_payload)) -ContentType "application/json; charset=utf-8"
+    Write-Host "`n[+] Scan successfully completed! Data sent to Discord." -ForegroundColor Green
+} catch {
+    Write-Host "`n[-] Critical error sending data to Discord." -ForegroundColor Red
 }
