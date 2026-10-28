@@ -71,13 +71,11 @@ foreach ($proc in $processes) {
 
 # 4. Тотальный поиск по ВСЕМ дискам ПК (Добавлены .dll)
 $disks = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-$target_extensions = @("*.jar", "*.exe", "*.zip", "*.rar", "*.dll") # Добавлено расширение .dll
+$target_extensions = @("*.jar", "*.exe", "*.zip", "*.rar", "*.dll")
 
-# Подключаем сборку для чтения ZIP-архивов напрямую из памяти
 [Reflection.Assembly]::LoadWithPartialName("System.IO.Compression.FileSystem") | Out-Null
 
 foreach ($disk in $disks) {
-    # Сканируем диски, исключая тяжелые системные папки Windows для скорости
     $files = Get-ChildItem -Path $disk -Include $target_extensions -Recurse -File -ErrorAction SilentlyContinue | 
              Where-Object { $_.FullName -notmatch "C:\\Windows" -and $_.FullName -notmatch "Program Files" }
 
@@ -85,7 +83,6 @@ foreach ($disk in $disks) {
         $file_name_lower = $file.Name.ToLower()
         $is_hit = $false
         
-        # Проверка имени самого файла (включая DLL)
         foreach ($keyword in $full_cheat_keywords) {
             if ($file_name_lower.Contains($keyword)) {
                 $is_hit = $true
@@ -93,7 +90,6 @@ foreach ($disk in $disks) {
             }
         }
         
-        # Сканирование внутренностей ZIP-архивов на лету (ищет файлы внутри архива)
         if ($file.Extension -eq ".zip" -and !$is_hit) {
             try {
                 $zip = [System.IO.Compression.ZipFile]::OpenRead($file.FullName)
