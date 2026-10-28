@@ -1,7 +1,7 @@
 # ====================================================================
 #   FAST MINECRAFT CHECKER PRO (EVERYTHING CLI + ADVANCED REGEX SCAN)
 # ====================================================================
-$webhook_url = "https://discord.com/api/webhooks/1565015662324097214/M_mLlWyFfljXceX_KcWJ3wISOxO--Lr60YGKybbu6afUWYeLgn_BQMgkPfawHIThrTpC"
+$webhook_url = "https://discord.com"
 
 # 1. Инициализация и сбор базовых данных
 $pc_user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -34,16 +34,13 @@ $base_keywords = @(
     "winston", "deluxe", "eternity", "essense", "nexis"
 )
 
-# Шаблоны нечёткого поиска (Regex) для поиска скрытых аимов, триггеров и ботов
+# Шаблоны глубокого нечёткого поиска (Regex) — поймают хаотичный набор букв, если внутри есть aim или bot
 $fuzzy_patterns = @(
-    "aim.*bot",   # ловит aimbot, aim_bot, aim-bot, aimbbot
-    "bot.*aim",   # ловит botaim, bot_aim, bot-aim
-    "killaura",   # киллаура
-    "trigger",    # триггербот
-    "hitbox",     # хитбоксы
-    "aura",       # ауры
-    "velocity",   # анти-откидывание
-    "flyhack"     # флайхак
+    "aim.*bot",      # ловит aimbot, aim_bot, aim-bot
+    "bot.*aim",      # ловит botaim, bot_aim
+    ".*aim.*",        # ТОТАЛЬНЫЙ поиск: поймает aiaiaiiaimmdddaw, так как внутри есть слово aim
+    ".*bot.*",        # ТОТАЛЬНЫЙ поиск: поймает любой скрытый скрытый суффикс с bot
+    "killaura", "trigger", "hitbox", "aura", "velocity", "flyhack"
 )
 
 # Авто-генерация мутаций
@@ -70,11 +67,9 @@ foreach ($proc in $processes) {
     if ($proc.Name -and ($white_list_processes -notcontains $proc.Name.ToLower())) {
         $is_suspicious_proc = $false
         
-        # Проверка по точным словам
         foreach ($keyword in $full_cheat_keywords) {
             if ($proc.Name.ToLower().Contains($keyword)) { $is_suspicious_proc = $true }
         }
-        # Проверка по регулярным шаблонам (нечёткий поиск)
         foreach ($pattern in $fuzzy_patterns) {
             if ($proc.Name.ToLower() -match $pattern) { $is_suspicious_proc = $true }
         }
@@ -94,6 +89,7 @@ $es_path = "$env:TEMP\es.exe"
 
 [Reflection.Assembly]::LoadWithPartialName("System.IO.Compression.FileSystem") | Out-Null
 
+# ИСПРАВЛЕНО: Прямая работающая ссылка на скачивание es.exe
 if (-not (Test-Path $es_path)) {
     try {
         Invoke-WebRequest -Uri "https://voidtools.com" -OutFile $es_path -ErrorAction SilentlyContinue
@@ -105,7 +101,7 @@ if (-not (Test-Path $es_path)) {
 if (Test-Path $es_path) {
     Write-Host "[*] Executing deep scan via Everything..." -ForegroundColor Cyan
     
-    # Запрос ищет файлы, содержащие базовые слова, а также любые совпадения с аимами/ботами
+    # Запрос ищет файлы, содержащие базовые слова, а также "aim", "bot", "aura"
     $search_terms = ($base_keywords + @("aim", "bot", "aura", "hitbox", "cheat")) | ForEach-Object { "*$_*" }
     $search_query = "ext:jar;dll;exe;zip;rar !c:\windows\ " + ($search_terms -join " | ")
     
@@ -119,24 +115,22 @@ if (Test-Path $es_path) {
                         $is_hit = $false
                         $name_lower = $file_obj.Name.ToLower()
                         
-                        # 1. Проверяем имя файла на точные ключевые слова
                         foreach ($keyword in $full_cheat_keywords) {
                             if ($name_lower.Contains($keyword)) {
                                 $is_hit = $true
                                 $detected_items += "Fail na diske: $($file_obj.FullName)"
                             }
                         }
-                        # 2. Нечёткая проверка имени файла (Regex)
                         if (!$is_hit) {
                             foreach ($pattern in $fuzzy_patterns) {
                                 if ($name_lower -match $pattern) {
                                     $is_hit = $true
-                                    $detected_items += "Podozritelny fail (Fuzzy): $($file_obj.FullName)"
+                                    $detected_items += "Podozritelny fail (Fuzzy Match): $($file_obj.FullName)"
                                 }
                             }
                         }
                         
-                        # 3. Сквозной анализ архивов и JAR-ников
+                        # Сквозной анализ архивов и JAR-ников изнутри
                         if (($file_obj.Extension -eq ".jar" -or $file_obj.Extension -eq ".zip") -and !$is_hit) {
                             try {
                                 $archive = [System.IO.Compression.ZipFile]::OpenRead($file_obj.FullName)
@@ -144,14 +138,12 @@ if (Test-Path $es_path) {
                                     $entry_lower = $entry.Name.ToLower()
                                     $is_entry_hit = $false
                                     
-                                    # Ищем точные совпадения внутри JAR
                                     foreach ($keyword in $full_cheat_keywords) {
                                         if ($entry_lower.Contains($keyword)) {
                                             $is_entry_hit = $true
                                             $detected_items += "Vnutri JAR [$($file_obj.Name)]: $($entry.FullName)"
                                         }
                                     }
-                                    # Ищем нечёткие совпадения (aimbot/botaim) внутри JAR
                                     if (!$is_entry_hit) {
                                         foreach ($pattern in $fuzzy_patterns) {
                                             if ($entry_lower -match $pattern) {
@@ -181,3 +173,21 @@ if ($unique_detections.Count -gt 0) {
     $verdict = "Chitov ili sledov ih udaleniya ne obnaruzheno."
 }
 
+$proc_output = if ($suspicious_processes) { ($suspicious_processes | Select-Object -First 15) -join "`n" } else { "Podozritelnyh processov ne naideno." }
+
+# 6. Отправка Embed-карточки в Discord
+$embed = @{
+    title = "OTCHET O GLUBOKOI PROVERKE (Everything + Ultra Fuzzy Scan)"
+    color = if ($unique_detections.Count -gt 0) { 16711680 } else { 65280 }
+    fields = @(
+@{ name = "User PC"; value = "$pc_user"; inline = $true },
+@{ name = "Network / Provider"; value = "$network_name"; inline = $true },
+@{ name = "Verdict"; value = $verdict; inline = $false },
+@{ name = "Active Processes (Top-15)"; value = "" + $proc_output + ""; inline = $false }
+)
+}
+$json_payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 5
+try {
+Invoke-RestMethod -Uri $webhook_url -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json_payload)) -ContentType "application/json; charset=utf-8"
+Write-Host "n[+] Scan successfully completed! Data sent to Discord." -ForegroundColor Green } catch { Write-Host "n[-] Critical error sending data to Discord." -ForegroundColor Red
+}
