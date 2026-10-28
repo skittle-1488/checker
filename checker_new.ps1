@@ -75,14 +75,14 @@ $es_path = "$env:TEMP\es.exe"
 
 # Скачиваем официальную CLI-утилиту es.exe в Temp, если её там нет
 if (-not (Test-Path $es_path)) {
+# Скачиваем официальную CLI-утилиту es.exe в Temp, если её там нет
+if (-not (Test-Path $es_path)) {
     try {
         Invoke-WebRequest -Uri "https://voidtools.com" -OutFile $es_path -ErrorAction SilentlyContinue
     } catch {
         Write-Host "[-] Failed to load fast search engine. Swapped to fallback mode." -ForegroundColor Yellow
     }
 }
-
-if (Test-Path $es_path) {
     Write-Host "[*] Executing total PC scan via Everything (1-2 seconds)..." -ForegroundColor Cyan
     
     # Формируем один общий поисковый запрос для Everything
