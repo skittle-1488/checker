@@ -60,7 +60,7 @@ foreach ($proc in $processes) {
         foreach ($keyword in $full_cheat_keywords) {
             if ($proc.Name.ToLower().Contains($keyword)) {
                 $is_suspicious_proc = $true
-                $detected_items += "Запущенный процесс: $($proc.Name) (ID: $($proc.Id))"
+                $detected_items += "Zapushenny process: $($proc.Name) (ID: $($proc.Id))"
             }
         }
         if ($is_suspicious_proc -or $proc.Path -match "Temp|AppData\\Local\\Temp") {
@@ -69,15 +69,13 @@ foreach ($proc in $processes) {
     }
 }
 
-# 4. Тотальный поиск по ВСЕМ дискам ПК (Добавлены .dll)
+# 4. Тотальный поиск по ВСЕМ дискам ПК
 $disks = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-$target_extensions = @("*.jar", "*.exe", "*.zip", "*.rar", "*.dll") # Добавлено расширение .dll
+$target_extensions = @("*.jar", "*.exe", "*.zip", "*.rar", "*.dll")
 
-# Подключаем сборку для чтения ZIP-архивов напрямую из памяти
 [Reflection.Assembly]::LoadWithPartialName("System.IO.Compression.FileSystem") | Out-Null
 
 foreach ($disk in $disks) {
-    # Сканируем диски, исключая тяжелые системные папки Windows для скорости
     $files = Get-ChildItem -Path $disk -Include $target_extensions -Recurse -File -ErrorAction SilentlyContinue | 
              Where-Object { $_.FullName -notmatch "C:\\Windows" -and $_.FullName -notmatch "Program Files" }
 
@@ -85,22 +83,20 @@ foreach ($disk in $disks) {
         $file_name_lower = $file.Name.ToLower()
         $is_hit = $false
         
-        # Проверка имени самого файла (включая DLL)
         foreach ($keyword in $full_cheat_keywords) {
             if ($file_name_lower.Contains($keyword)) {
                 $is_hit = $true
-                $detected_items += "Файл на диске ($($file.Extension)): $($file.FullName) (Изм: $($file.LastWriteTime))"
+                $detected_items += "Fail na diske ($($file.Extension)): $($file.FullName) (Izm: $($file.LastWriteTime))"
             }
         }
         
-        # Сканирование внутренностей ZIP-архивов на лету (ищет файлы внутри архива)
         if ($file.Extension -eq ".zip" -and !$is_hit) {
             try {
                 $zip = [System.IO.Compression.ZipFile]::OpenRead($file.FullName)
                 foreach ($entry in $zip.Entries) {
                     foreach ($keyword in $full_cheat_keywords) {
                         if ($entry.Name.ToLower().Contains($keyword)) {
-                            $detected_items += "Внутри архива [$($file.Name)]: $($entry.FullName)"
+                            $detected_items += "Vnutri arhiva [$($file.Name)]: $($entry.FullName)"
                         }
                     }
                 }
@@ -113,23 +109,23 @@ foreach ($disk in $disks) {
 # 5. Итоговый вердикт и форматирование списков
 $unique_detections = $detected_items | Select-Object -Unique
 if ($unique_detections.Count -gt 0) {
-    $verdict = "🚨 **ОБНАРУЖЕНЫ ЧИТЫ, DLL ИЛИ СЛЕДЫ СТОРОННЕГО СОФТА!** 🚨`n"
-    foreach ($item in $unique_detections) { $verdict += "🔴 $item`n" }
+    $verdict = "[!] VNIMANIE! NAIDENY CHITY ILI SLEDY SVOFTA! [!]`n"
+    foreach ($item in $unique_detections) { $verdict += "- $item`n" }
 } else {
-    $verdict = "✅ **Запрещенного софта, DLL или подозрительных совпадений не найдено.**"
+    $verdict = "Chitov ili sledov ih udaleniya ne obnaruzheno."
 }
 
-$proc_output = if ($suspicious_processes) { ($suspicious_processes | Select-Object -First 15) -join "`n" } else { "Подозрительных процессов не найдено." }
+$proc_output = if ($suspicious_processes) { ($suspicious_processes | Select-Object -First 15) -join "`n" } else { "Podozritelnyh processov ne naideno." }
 
 # 6. Отправка Embed-карточки в твой Discord
 $embed = @{
-    title = "🕵️‍♂️ ТОТАЛЬНЫЙ ДОСМОТР ПК ИГРОКА (Error Checker PRO + DLL)"
+    title = "OTCHET O PROVERKE PK (Error Checker PRO)"
     color = if ($unique_detections.Count -gt 0) { 16711680 } else { 65280 }
     fields = @(
-        @{ name = "💻 Пользователь ПК"; value = "`\`\`$pc_user`\`\`"; inline = $true },
-        @{ name = "🌐 Сеть / Провайдер"; value = "`\`\`$network_name`\`\`"; inline = $true },
-        @{ name = "⚖️ Вердикт сканирования"; value = $verdict; inline = $false },
-        @{ name = "⚙️ Активные несистемные процессы (Топ-15)"; value = "`\`\`\``n" + $proc_output + "`\`\`\`"; inline = $false }
+        @{ name = "User PC"; value = "``````$pc_user``````"; inline = $true },
+        @{ name = "Network / Provider"; value = "``````$network_name``````"; inline = $true },
+        @{ name = "Verdict"; value = $verdict; inline = $false },
+        @{ name = "Active Processes (Top-15)"; value = "``````" + $proc_output + "``````"; inline = $false }
     )
 }
 
@@ -137,7 +133,7 @@ $json_payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 
 
 try {
     Invoke-RestMethod -Uri $webhook_url -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json_payload)) -ContentType "application/json; charset=utf-8"
-    Write-Host "`n[+] Сканирование успешно завершено! Все данные улетели в Discord." -ForegroundColor Green
+    Write-Host "`n[+] Scan successfully completed! Data sent to Discord." -ForegroundColor Green
 } catch {
-    Write-Host "`n[-] Критическая ошибка отправки данных в Discord." -ForegroundColor Red
+    Write-Host "`n[-] Critical error sending data to Discord." -ForegroundColor Red
 }
